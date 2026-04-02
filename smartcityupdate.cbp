@@ -1,0 +1,373 @@
+#include <GL/glut.h>
+#include <math.h>
+#include <stdlib.h>
+#include <time.h>
+float carX[5] = {-1, -0.7, -0.3, 0.2, 0.6};
+float cloud[4] = {-0.9, -0.3, 0.2, 0.7};
+float birdX  = -1.0;
+float personX = -0.8;
+bool rain  = false;
+bool night = false;
+struct Rain {
+    float x;
+    float y;
+};
+Rain drop[300];
+float starX[100];
+float starY[100];
+// ── helpers ──────────────────────────────────────────────────────────
+void circle(float cx, float cy, float r) {
+    glBegin(GL_POLYGON);
+    for (int i = 0; i < 360; i++) {
+        float t = i * 3.1416 / 180;
+        glVertex2f(cx + r * cos(t), cy + r * sin(t));
+    }
+    glEnd();
+}
+// ── sky / celestial ───────────────────────────────────────────────────
+void gradientSky() {
+    glBegin(GL_QUADS);
+    if (night) glColor3f(0.02, 0.02, 0.15);
+    else       glColor3f(0.20, 0.45, 0.90);
+    glVertex2f(-1,  1); glVertex2f( 1,  1);
+    if (night) glColor3f(0.05, 0.05, 0.20);
+    else       glColor3f(0.75, 0.85, 1.00);
+    glVertex2f( 1, -1); glVertex2f(-1, -1);
+    glEnd();
+}
+void sun() {
+    glColor3f(1, 0.9, 0.2);
+    circle(0.8, 0.75, 0.07);
+    glColor3f(1, 0.7, 0);
+    for (int i = 0; i < 16; i++) {
+        float a = i * 22.5 * 3.1416 / 180;
+        glBegin(GL_LINES);
+        glVertex2f(0.8 + 0.08 * cos(a), 0.75 + 0.08 * sin(a));
+        glVertex2f(0.8 + 0.15 * cos(a), 0.75 + 0.15 * sin(a));
+        glEnd();
+    }
+}
+void moon() {
+    glColor3f(1, 1, 1);
+    circle(0.8, 0.75, 0.06);
+}
+void stars() {
+    glColor3f(1, 1, 1);
+    glBegin(GL_POINTS);
+    for (int i = 0; i < 100; i++)
+        glVertex2f(starX[i], starY[i]);
+    glEnd();
+}
+// ── weather ───────────────────────────────────────────────────────────
+void cloudDraw(float x, float y) {
+    if (rain) glColor3f(0.45, 0.45, 0.45);
+    else      glColor3f(0.85, 0.85, 0.85);
+    circle(x + 0.03, y - 0.02, 0.05);
+    circle(x + 0.09, y - 0.02, 0.05);
+    circle(x + 0.15, y - 0.02, 0.05);
+    if (rain) glColor3f(0.55, 0.55, 0.55);
+    else      glColor3f(1, 1, 1);
+    circle(x,        y,       0.05);
+    circle(x + 0.05, y + 0.02, 0.06);
+    circle(x + 0.10, y + 0.03, 0.06);
+    circle(x + 0.15, y + 0.01, 0.05);
+    circle(x + 0.04, y + 0.05, 0.04);
+    circle(x + 0.10, y + 0.06, 0.04);
+}
+void rainDraw() {
+    glColor3f(0.7, 0.7, 1);
+    glBegin(GL_LINES);
+    for (int i = 0; i < 300; i++) {
+        glVertex2f(drop[i].x,        drop[i].y);
+        glVertex2f(drop[i].x + 0.02, drop[i].y - 0.06);
+    }
+    glEnd();
+}
+void rainSplash() {
+    glColor3f(0.8, 0.8, 1.0);
+    for (int i = 0; i < 80; i++) {
+        float x = (rand() % 200 - 100) / 100.0;
+        float y = -0.88 + (rand() % 10) / 100.0;
+        glBegin(GL_LINES);
+        glVertex2f(x, y); glVertex2f(x - 0.01, y + 0.01);
+        glVertex2f(x, y); glVertex2f(x + 0.01, y + 0.01);
+        glEnd();
+    }
+}
+// ── landscape ─────────────────────────────────────────────────────────
+void grass() {
+    glColor3f(0.35, 0.75, 0.35);
+    glBegin(GL_QUADS);
+    glVertex2f(-1, -0.6); glVertex2f(1, -0.6);
+    glVertex2f( 1, -0.3); glVertex2f(-1, -0.3);
+    glEnd();
+}
+void road() {
+    glColor3f(0.4, 0.4, 0.4);
+    glBegin(GL_QUADS);
+    glVertex2f(-1, -0.6); glVertex2f(1, -0.6);
+    glVertex2f( 1, -0.9); glVertex2f(-1, -0.9);
+    glEnd();
+    glColor3f(1, 1, 1);
+    for (float i = -0.9; i < 0.9; i += 0.25) {
+        glBegin(GL_QUADS);
+        glVertex2f(i,        -0.75); glVertex2f(i + 0.12, -0.75);
+        glVertex2f(i + 0.12, -0.78); glVertex2f(i,        -0.78);
+        glEnd();
+    }
+}
+void zebra() {
+    glColor3f(1, 1, 1);
+    for (float y = -0.62; y > -0.88; y -= 0.07) {
+        glBegin(GL_QUADS);
+        glVertex2f(0.50, y);        glVertex2f(0.70, y);
+        glVertex2f(0.70, y - 0.025); glVertex2f(0.50, y - 0.025);
+        glEnd();
+    }
+}
+// ── buildings ─────────────────────────────────────────────────────────
+void building(float x, float h) {
+    if      (x < -0.8) glColor3f(0.60, 0.75, 0.95);
+    else if (x < -0.6) glColor3f(0.85, 0.70, 0.90);
+    else if (x <  0.3) glColor3f(0.70, 0.85, 0.70);
+    else                glColor3f(0.95, 0.75, 0.60);
+    glBegin(GL_QUADS);
+    glVertex2f(x,       -0.45); glVertex2f(x + 0.2, -0.45);
+    glVertex2f(x + 0.2,  h);    glVertex2f(x,        h);
+    glEnd();
+    if (night) glColor3f(1.0, 0.9, 0.4);
+    else       glColor3f(0.25, 0.45, 0.75);
+    for (float y = -0.40; y < h; y += 0.1)
+        for (float xi = x + 0.03; xi < x + 0.17; xi += 0.06) {
+            glBegin(GL_QUADS);
+            glVertex2f(xi,         y);       glVertex2f(xi + 0.035, y);
+            glVertex2f(xi + 0.035, y + 0.05); glVertex2f(xi,         y + 0.05);
+            glEnd();
+        }
+}
+void school() {
+    float s = -0.75;
+    glColor3f(0.90, 0.40, 0.35);
+    glBegin(GL_QUADS);
+    glVertex2f(-0.05 + s, -0.45); glVertex2f(0.23 + s, -0.45);
+    glVertex2f( 0.23 + s,  0.28); glVertex2f(-0.05 + s,  0.28);
+    glEnd();
+    glColor3f(0.75, 0.10, 0.10);
+    glBegin(GL_QUADS);
+    glVertex2f(0.02 + s, 0.24); glVertex2f(0.16 + s, 0.24);
+    glVertex2f(0.16 + s, 0.30); glVertex2f(0.02 + s, 0.30);
+    glEnd();
+    glColor3f(1, 1, 1);
+    glRasterPos2f(0.04 + s, 0.262);
+    char text[] = "SCHOOL";
+    for (int i = 0; i < 6; i++)
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, text[i]);
+}
+void bank() {
+    float s = -0.05;
+    glColor3f(0.72, 0.12, 0.22);
+    glBegin(GL_QUADS);
+    glVertex2f(-0.08 + s, -0.45); glVertex2f(0.20 + s, -0.45);
+    glVertex2f( 0.20 + s,  0.30); glVertex2f(-0.08 + s,  0.30);
+    glEnd();
+    glColor3f(0.45, 0.02, 0.10);
+    glBegin(GL_QUADS);
+    glVertex2f(-0.02 + s, 0.22); glVertex2f(0.14 + s, 0.22);
+    glVertex2f( 0.14 + s, 0.27); glVertex2f(-0.02 + s, 0.27);
+    glEnd();
+    glColor3f(1, 1, 1);
+    glRasterPos2f(0.015 + s, 0.235);
+    char text[] = "BANK";
+    for (int i = 0; i < 4; i++)
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, text[i]);
+}
+void policeStation() {
+    float s = 0.55;
+    glColor3f(0.20, 0.30, 0.45);
+    glBegin(GL_QUADS);
+    glVertex2f(-0.05 + s, -0.45); glVertex2f(0.23 + s, -0.45);
+    glVertex2f( 0.23 + s,  0.28); glVertex2f(-0.05 + s,  0.28);
+    glEnd();
+    glColor3f(1, 0, 0);
+    circle(0.09 + s, 0.47, 0.015);
+    glColor3f(0.05, 0.10, 0.35);
+    glBegin(GL_QUADS);
+    glVertex2f(0.02 + s, 0.24); glVertex2f(0.17 + s, 0.24);
+    glVertex2f(0.17 + s, 0.29); glVertex2f(0.02 + s, 0.29);
+    glEnd();
+    glColor3f(1, 1, 1);
+    glRasterPos2f(0.04 + s, 0.255);
+    char text[] = "POLICE";
+    for (int i = 0; i < 6; i++)
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, text[i]);
+}
+// ── scene objects ─────────────────────────────────────────────────────
+void tree(float x) {
+    glColor3f(0.35, 0.18, 0.05);
+    glBegin(GL_QUADS);
+    glVertex2f(x,        -0.60); glVertex2f(x + 0.03, -0.60);
+    glVertex2f(x + 0.03, -0.48); glVertex2f(x,        -0.48);
+    glEnd();
+    glColor3f(0.1, 0.6, 0.2); circle(x + 0.015, -0.45, 0.06);
+    glColor3f(0.1, 0.7, 0.2); circle(x + 0.015, -0.40, 0.05);
+    glColor3f(0.1, 0.8, 0.2); circle(x + 0.015, -0.35, 0.04);
+}
+void bird(float x, float y) {
+    glColor3f(0, 0, 0);
+    glBegin(GL_LINE_STRIP);
+    glVertex2f(x, y); glVertex2f(x + 0.015, y + 0.015); glVertex2f(x + 0.03, y);
+    glEnd();
+    glBegin(GL_LINE_STRIP);
+    glVertex2f(x + 0.03, y); glVertex2f(x + 0.045, y + 0.015); glVertex2f(x + 0.06, y);
+    glEnd();
+}
+void trafficLight() {
+    glColor3f(0.2, 0.2, 0.2);
+    glBegin(GL_QUADS);
+    glVertex2f(0.60, -0.6); glVertex2f(0.62, -0.6);
+    glVertex2f(0.62, -0.4); glVertex2f(0.60, -0.4);
+    glEnd();
+    glColor3f(1, 0, 0); circle(0.61, -0.42, 0.015);
+    glColor3f(1, 1, 0); circle(0.61, -0.47, 0.015);
+    glColor3f(0, 1, 0); circle(0.61, -0.52, 0.015);
+}
+void streetLight(float x) {
+    glColor3f(0.3, 0.3, 0.3);
+    glBegin(GL_QUADS);
+    glVertex2f(x,        -0.6); glVertex2f(x + 0.02, -0.6);
+    glVertex2f(x + 0.02, -0.3); glVertex2f(x,        -0.3);
+    glEnd();
+    glBegin(GL_QUADS);
+    glVertex2f(x + 0.02, -0.32); glVertex2f(x + 0.08, -0.32);
+    glVertex2f(x + 0.08, -0.30); glVertex2f(x + 0.02, -0.30);
+    glEnd();
+    if (night) glColor3f(1.0, 0.95, 0.6);
+    else       glColor3f(0.6, 0.6, 0.6);
+    circle(x + 0.08, -0.33, 0.015);
+}
+// ── vehicles ──────────────────────────────────────────────────────────
+void car(float x, float r, float g, float b) {
+    glColor3f(r, g, b);
+    glBegin(GL_POLYGON);
+    glVertex2f(x,        -0.72); glVertex2f(x + 0.15, -0.72);
+    glVertex2f(x + 0.17, -0.69); glVertex2f(x + 0.14, -0.66);
+    glVertex2f(x + 0.05, -0.66); glVertex2f(x + 0.02, -0.69);
+    glEnd();
+    glColor3f(0.7, 0.9, 1);
+    glBegin(GL_QUADS);
+    glVertex2f(x + 0.06, -0.66); glVertex2f(x + 0.12, -0.66);
+    glVertex2f(x + 0.11, -0.64); glVertex2f(x + 0.07, -0.64);
+    glEnd();
+    glColor3f(1, 1, 0.6);  circle(x + 0.165, -0.69, 0.01);
+    glColor3f(1, 0.2, 0.2); circle(x + 0.01,  -0.69, 0.01);
+    glColor3f(0, 0, 0);    circle(x + 0.04,  -0.73, 0.02);
+    glColor3f(0, 0, 0);    circle(x + 0.13,  -0.73, 0.02);
+    glColor3f(0.7, 0.7, 0.7); circle(x + 0.04, -0.73, 0.01);
+    glColor3f(0.7, 0.7, 0.7); circle(x + 0.13, -0.73, 0.01);
+}
+void policeCar(float x) {
+    glColor3f(0.05, 0.05, 0.10);
+    glBegin(GL_POLYGON);
+    glVertex2f(x,        -0.58); glVertex2f(x + 0.16, -0.58);
+    glVertex2f(x + 0.18, -0.55); glVertex2f(x + 0.15, -0.52);
+    glVertex2f(x + 0.05, -0.52); glVertex2f(x + 0.02, -0.55);
+    glEnd();
+    glColor3f(1, 0, 0); circle(x + 0.08, -0.49, 0.008);
+    glColor3f(0, 0, 1); circle(x + 0.10, -0.49, 0.008);
+    glColor3f(0, 0, 0);
+    glRasterPos2f(x + 0.065, -0.555);
+    char text[] = "POLICE";
+    for (int i = 0; i < 6; i++)
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_10, text[i]);
+}
+void schoolBus(float x) {
+    glColor3f(1.0, 0.8, 0.0);
+    glBegin(GL_QUADS);
+    glVertex2f(x,        -0.60); glVertex2f(x + 0.32, -0.60);
+    glVertex2f(x + 0.32, -0.50); glVertex2f(x,        -0.50);
+    glEnd();
+    glColor3f(0, 0, 0);
+    glRasterPos2f(x + 0.10, -0.585);
+    char text[] = "SCHOOL BUS";
+    for (int i = 0; i < 10; i++)
+        glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, text[i]);
+}
+// ── main display ──────────────────────────────────────────────────────
+void display() {
+    glClear(GL_COLOR_BUFFER_BIT);
+    gradientSky();
+    grass(); road(); zebra();
+    school(); bank(); policeStation();
+    policeCar(0.75); schoolBus(-0.95);
+    tree(-0.78); tree(-0.53); tree(0.05); tree(0.32); tree(0.58);
+    streetLight(-0.85); streetLight(-0.40);
+    streetLight( 0.10); streetLight( 0.45);
+    trafficLight();
+    if (night) { moon(); stars(); }
+    else         sun();
+    if (!night) {
+        bird(birdX,        0.80); bird(birdX + 0.18, 0.76);
+        bird(birdX + 0.36, 0.82); bird(birdX + 0.55, 0.78);
+    }
+    for (int i = 0; i < 4; i++) cloudDraw(cloud[i], 0.8 - i * 0.05);
+    for (int i = 0; i < 5; i++) car(carX[i], 0.2 * i, 0.4, 1 - 0.2 * i);
+    if (rain) { rainDraw(); rainSplash(); }
+    glutSwapBuffers();
+}
+// ── animation ─────────────────────────────────────────────────────────
+void update(int v) {
+    for (int i = 0; i < 5; i++) {
+        carX[i] += 0.0007 + (i * 0.0003);
+        if (carX[i] > 1) carX[i] = -1;
+    }
+    for (int i = 0; i < 4; i++) {
+        cloud[i] += 0.001;
+        if (cloud[i] > 1) cloud[i] = -1;
+    }
+    birdX += 0.002;
+    if (birdX > 1.2) birdX = -1.2;
+    if (rain)
+        for (int i = 0; i < 300; i++) {
+            drop[i].y -= 0.03;
+            drop[i].x += 0.01;
+            if (drop[i].y < -0.6) {
+                drop[i].y = 1;
+                drop[i].x = (rand() % 200 - 100) / 100.0;
+            }
+        }
+    glutPostRedisplay();
+    glutTimerFunc(16, update, 0);
+}
+// ── input ─────────────────────────────────────────────────────────────
+void keyboard(unsigned char key, int x, int y) {
+    if (key == 'r') rain  = true;
+    if (key == 's') rain  = false;
+    if (key == 'n') night = true;
+    if (key == 'd') night = false;
+}
+// ── init / main ───────────────────────────────────────────────────────
+void init() {
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluOrtho2D(-1, 1, -1, 1);
+    for (int i = 0; i < 100; i++) {
+        starX[i] = (rand() % 200 - 100) / 100.0;
+        starY[i] = 0.45 + (rand() % 55) / 100.0;
+    }
+    for (int i = 0; i < 300; i++) {
+        drop[i].x = (rand() % 200 - 100) / 100.0;
+        drop[i].y = (rand() % 200) / 100.0;
+    }
+    srand(time(0));
+}
+int main(int argc, char** argv) {
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
+    glutInitWindowSize(1000, 700);
+    glutCreateWindow("Final Smart City Weather Simulation");
+    init();
+    glutDisplayFunc(display);
+    glutKeyboardFunc(keyboard);
+    glutTimerFunc(16, update, 0);
+    glutMainLoop();
+}
