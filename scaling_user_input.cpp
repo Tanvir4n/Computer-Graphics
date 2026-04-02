@@ -29,7 +29,7 @@ void drawHexagon(){
 
 void Draw(){
     glClear(GL_COLOR_BUFFER_BIT);
-    glColor3f(0, 1, 0); // green
+    glColor3f(1, 0, 0); // green
 
     // Original (left)
     glPushMatrix();
